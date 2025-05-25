@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="revision" content="1.2.0">
+    <meta name="last-modified" content="2025-05-24">
+    
+    <title>Auto Site Redirection</title>
+    
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            /* height: 100%; */
+            font-family: sans-serif;
+            background-color: #f5f5f5;
+            font-size: 1.2em;
+        }
+
+        .wrapper {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            padding: 20px;
+            box-sizing: border-box;
+            width: 100%;
+        }
+
+        .container {
+            width: 100%;
+            text-align: left;
+            padding: 30px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-size: 1.2em;
+            box-sizing: border-box;
+        }
+
+        .input-group {
+            align-items: center;
+            margin-bottom: 20px;
+            width: 100%;
+            font-size: 1.2em;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .input-group label {
+            min-width: 240px;
+            margin-bottom: 8px;
+            font-weight: bold;
+            gap: 5px;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 1.1em;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+
+        button, .button {
+            margin-top: 24px;
+            padding: 24px 60px;
+            font-size: 1.8em;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            box-shadow: 0 6px 10px rgba(0,0,0,0.15);
+        }
+
+        button:hover,
+        .button:hover {
+            background-color: #45a049;
+        }
+
+        .button-wrapper,
+        .button-wrapper {
+            text-align: center;
+            margin-top: 36px;
+        }
+    </style>
+    
+    <script>
+        let jsonData;
+        let teamSelected;
+        let teamId;
+        let unixMs;
+        let unixSec;
+        let subDomain;
+        let reserveTime;
+        let scheduleId;
+        let productId;
+        let redirectUrl;
+    </script>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="container">
+            <div class="input-group">
+                <label for="teamSelected">구단 선택</label>
+                <select id="teamSelected">
+                    <option value="구단 선택">구단 선택</option>
+                    <option value="SAMSUNG">삼성 라이온즈</option>
+                    <option value="KIA">기아 타이거즈</option>
+                    <option value="KIA_BISTROPUB">기아 타이거즈 비스트로펍</option>
+                    <option value="LG">엘지 트윈스</option>
+                    <option value="KT">케이티 위즈</option>
+                    <option value="HANHWA">한화 이글스</option>
+                    <option value="HANHWA_INNINGS">한화 이닝스</option>
+                    <option value="SSG">SSG 랜더스</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="datetime">경기 일시</label>
+                <input type="datetime-local" id="datetime" placeholder="날짜 및 시간 선택">
+            </div>
+
+            <div class="input-group">
+                <label for="subDomain">서브 도메인</label>
+                <select id="subDomain">
+                    <option value="www">www</option>
+                    <option value="facility">facility</option>
+                    <option value="m">m</option>
+                    <option value="facility-m">facility-m</option>
+                </select>
+            </div>
+
+            <div class="input-group">
+                <label for="reserveTime">예매 시작 시간</label>
+                <input type="number" step="0.001" id="reserveTime" placeholder="(예: 105959.123, 135959.987)">
+            </div>
+
+            <div class="button-wrapper">
+                <button id="reserveBtn">티켓링크 예매</button>
+                <div id="resultInfo" style="margin-top: 10px; color: #333;"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(function() {
+            $("#reserveBtn").css('cursor', 'pointer');
+        });
+    </script>
+
+    <script>
+        const teamSelectBox = document.getElementById('teamSelected');
+
+        teamSelectBox.addEventListener('change', function() {
+            console.log('선택한 구단은?(this.value) : ', this.value);
+            teamSelected = this.value;
+
+            if (teamSelected === "구단 선택") {
+                console.log("선택이 안 됨. 작업 중단.");
+                return;
+            }
+
+            const urlParamsMap = {
+                SAMSUNG:        [137, 57],
+                KIA:            [137, 58],
+                KIA_BISTROPUB:  [137, 460],
+                LG:             [137, 59],
+                KT:             [137, 62],
+                HANHWA:         [137, 63],
+                HANHWA_INNINGS: [137, 241],
+                SSG:            [137, 476]
+            }
+            const params = urlParamsMap[teamSelected];
+            teamId = params[1];
+            const nowTime = new Date();
+            const year = nowTime.getFullYear();
+            const month = String(nowTime.getMonth() + 1).padStart(2, '0');
+            const day = String(nowTime.getDate()).padStart(2, '0');
+            const nowDate = `${year}${month}${day}`;
+
+            if (params) {
+                const url = `https://mapi.ticketlink.co.kr/mapi/sports/schedules?categoryId=${params[0]}&teamId=${params[1]}&startDate=${nowDate}`;
+                // const proxy = 'https://baseballk.glitch.me/proxy?url=';
+                const proxy = 'https:///baseballk.proxyflare.workers.dev/?url=';
+                const fullUrl = proxy + url;
+
+                fetch(fullUrl, {
+                    method: 'GET',
+                    headers: {
+                        'accept': 'application/json, text/plain, */*',
+                        'host': 'mapi.ticketlink.co.kr',
+                        'origin': 'https://www.ticketlink.co.kr',
+                        'referer': 'https://www.ticketlink.co.kr/',
+                        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36'
+                    }
+                })
+                .then(res => {
+                    const contentType = res.headers.get("content-type");
+                    if (!res.ok) {
+                        throw new Error(`HTTP 오류: ${res.status}`);
+                    }
+
+                    if (contentType && contentType.includes("application/json")) {
+                        return res.json();
+                    } else {
+                        return res.text();
+                    }
+                })
+                .then(data => {
+                    if (data?.success === true) {
+                        jsonData = data;
+                        console.log("선택한 구단:", teamSelected);
+                    } else {
+                        alert("구단 예매 정보를 불러올 수 없습니다\n구단을 다시 선택 해주세요");
+                    }
+                })
+                .catch(err => {
+                    console.error("오류 발생:", err.message);
+                    alert(`서버 응답 오류 또는 연결 지연 & 실패 : 예매 버튼 다시 클릭`);
+                });
+            }
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const datetimeInput = document.getElementById("datetime");
+            datetimeInput.addEventListener("change", function () {
+                const dateStr = datetimeInput.value;
+                const dateObj = new Date(dateStr);
+                unixMs = dateObj.getTime();
+                unixSec = Math.floor(unixMs / 1000);
+            });
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputElem = document.getElementById("subDomain");
+            if (inputElem) {
+                subDomain = inputElem.value;
+                console.log(subDomain);
+            } else {
+                console.warn("subDomain 요소를 찾을 수 없습니다.");
+            }
+        });
+    </script>
+
+    <script>
+        document.getElementById("reserveTime").addEventListener("change", function () {
+            const rawValue = this.value.trim();
+            
+            const [timeStr, msStr = "0"] = rawValue.split(".");
+            const paddedTime = timeStr.padStart(6, "0");
+            const paddedMs = msStr.padEnd(3, "0");
+
+            const hours = parseInt(paddedTime.slice(0, 2), 10);
+            const minutes = parseInt(paddedTime.slice(2, 4), 10);
+            const seconds = parseInt(paddedTime.slice(4, 6), 10);
+            const milliseconds = parseInt(paddedMs, 10);
+
+            if ([hours, minutes, seconds, milliseconds].some(isNaN)) {
+                alert("입력 오류: 시간 형식이 잘못되었습니다.");
+                reserveTime = null;
+                return;
+            }
+
+            const now = new Date();
+            const target = new Date();
+            target.setHours(hours, minutes, seconds, milliseconds);
+
+            if (target <= now) {
+                alert("현재 시간보다 이전입니다.\n다시 입력해주세요.");
+                reserveTime = null;
+                return;
+            }
+
+            reserveTime = target;
+            console.log(`✅ 예약 시간 설정 완료: ${target.toLocaleTimeString('ko-KR', { hour12: false })}.${target.getMilliseconds().toString().padStart(3, "0")}`);
+        });
+    </script>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            const reserveBtn = document.getElementById('reserveBtn');
+            const resultInfo = document.getElementById('resultInfo');
+            
+            let handled = false;
+            const resetDelay = 1000;
+
+            function escapeHTML(str) {
+                return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+            }
+
+            function handler() {
+                if (handled) return;
+                handled = true;
+
+                alert("티켓링크 예매 : 티켓링크 예매 버튼 클릭 성공");
+
+                if (
+                    jsonData &&
+                    Array.isArray(jsonData.data) &&
+                    (jsonData.data.length > 0) &&
+                    (jsonData?.success === true)
+                ) {
+                    const matchedData = jsonData?.data?.find(item =>
+                    item.scheduleDate === unixMs &&
+                    item.homeTeam?.teamId === teamId
+                    );
+
+                    if (matchedData) {
+                        const checkTeam = matchedData?.homeTeam?.teamId;
+                        if (Number(checkTeam) === Number(teamId)) {
+                            scheduleId = matchedData?.scheduleId;
+                            productId = matchedData?.productId;
+                        } else {
+                            alert("경기 Ids 에러 : 다시 실행하세요\n에러가 계속되면 카페에 문의하세요");
+                            return;
+                        }
+                    } else {
+                        alert("설정 에러 : 설정을 다시 확인하세요");
+                        return;
+                    }
+                }
+
+                if (scheduleId && productId) {
+                    subDomain = document.getElementById("subDomain").value;
+                    redirectUrl = `https://${subDomain}.ticketlink.co.kr/reserve/product/${productId}?scheduleId=${scheduleId}`
+                    const rawValue = document.getElementById('reserveTime').value;
+                    const infoTime = parseFloat(rawValue);
+
+                    if (!isNaN(infoTime)) {
+                        const hours = String(Math.floor(infoTime / 10000)).padStart(2, "0");
+                        const minutes = String(Math.floor((infoTime % 10000) / 100)).padStart(2, "0");
+                        const rawSeconds = infoTime % 100;
+                        const secInteger = String(Math.floor(rawSeconds)).padStart(2, "0");
+                        const secDecimal = (rawSeconds % 1).toFixed(3).substring(1);
+                        const seconds = `${secInteger}${secDecimal}`;
+                        const resultTime = `${hours}시 ${minutes}분 ${seconds}초`;
+                        
+                        resultInfo.innerHTML = `<p>${escapeHTML(resultTime)}에<br>${escapeHTML(redirectUrl)}<br>예매 주소로 이동합니다:</p>`;
+
+                        let preciseCheckInterval = null;
+                        
+                        const regularCheck = setInterval(() => {
+                            const nowPrecise = new Date();
+                            const remaining = reserveTime.getTime() - nowPrecise.getTime();
+                            if (remaining <= 3000) {
+                                clearInterval(regularCheck);
+                                preciseCheckInterval = setInterval(() => {
+                                    const nowPrecise = new Date();
+                                    if (nowPrecise.getTime() >= reserveTime.getTime()) {
+                                        clearInterval(preciseCheckInterval);
+                                        window.location.href = redirectUrl;
+                                    }
+                                }, 75);
+                            }
+                        }, 1000);
+                    } else {
+                        console.warn("잘못된 시간 형식입니다.");
+                        return;
+                    }
+                } else {
+                    alert("설정 에러 : 스케줄 설정을 다시 확인하세요");
+                    return;
+                }
+
+                setTimeout(() => {
+                handled = false;
+                }, resetDelay);
+            }
+
+            reserveBtn.addEventListener('click', handler);
+            reserveBtn.addEventListener('touchend', handler);
+        });
+    </script>
+
+
+</body>
+</html>
